@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -77,4 +79,10 @@ def compute_score(pylint_result, radon_result, bandit_result):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Security fix (Maidah, Week 2 audit — Bandit B201 flask_debug_true):
+    # hardcoded debug=True exposes the Werkzeug interactive debugger, which
+    # allows arbitrary code execution if the /analyze endpoint (or anything
+    # else) ever throws an unhandled exception in production. Debug mode is
+    # now opt-in via FLASK_DEBUG (see .env.example) and defaults to off.
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug_mode)

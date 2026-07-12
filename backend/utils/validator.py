@@ -1,13 +1,14 @@
 """
 validator.py
 Owner: Maidah (Security & QA Lead)
-Week:  Week 1
+Week:  Week 1 skeleton, Week 2 hardening
 
 Validates and sanitizes all user input before it reaches the analysis engine.
 This is the first line of defence against malformed or malicious input.
 """
 
 import re
+import requests
 
 # ── Constants (mirrors validation_rules.md) ──────────────────────────────────
 
@@ -17,12 +18,46 @@ GITHUB_URL_PREFIX = "https://github.com/"
 GITHUB_URL_REGEX  = re.compile(
     r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$"
 )
+GITHUB_TIMEOUT_SECONDS = 5
 
-# Characters that could be used to manipulate the server filesystem or shell.
-# Bandit/Pylint run in subprocesses, so we sanitize before passing code along.
+# Characters/constructs that could be used to manipulate the server
+# filesystem, shell, or interpreter. Bandit/Pylint/Radon all run against
+# this code (either as a subprocess on a temp file, or directly in-process
+# for Radon), so we sanitize before any of it reaches those tools.
+#
+# Week 2 research notes (Maidah): started from the Bandit plugin index
+# (https://bandit.readthedocs.io/en/latest/plugins/index.html) and picked
+# the constructs that are dangerous the moment they're *present* in a
+# string, regardless of whether the code actually runs (Radon parses code
+# directly; a crafted docstring/comment could still be read by tooling
+# that isn't as careful as Bandit is with AST-only parsing).
 BLOCKED_PATTERNS = [
-    # Shell escape attempts in code strings
-    re.compile(r"__import__\s*\(\s*['\"]os['\"]"),   # __import__('os')
+    # __import__('os') — imports a dangerous module via a string, bypassing
+    # simple "import os" greps.
+    re.compile(r"__import__\s*\(\s*['\"]os['\"]"),
+
+    # __import__('subprocess') — same trick, targeting subprocess instead.
+    re.compile(r"__import__\s*\(\s*['\"]subprocess['\"]"),
+
+    # exec(...) — runs arbitrary code built from a string at runtime. There's
+    # no legitimate reason for analyzer input to need this.
+    re.compile(r"\bexec\s*\("),
+
+    # eval(...) — same risk as exec(), commonly used to smuggle in dynamic
+    # code that static analysis alone won't catch.
+    re.compile(r"\beval\s*\("),
+
+    # os.system(...) — direct shell command execution.
+    re.compile(r"os\.system\s*\("),
+
+    # shell=True — when paired with subprocess calls this enables full shell
+    # command injection rather than a single controlled executable.
+    re.compile(r"shell\s*=\s*True"),
+
+    # open(..., 'w'/'a'/'x') — write/append/create file modes. Submitted code
+    # is only ever supposed to be *read* and analysed, never used to write
+    # files on the server's filesystem.
+    re.compile(r"open\s*\([^)]*['\"][waxWAX][+tb]?['\"]"),
 ]
 
 
@@ -104,8 +139,19 @@ def _validate_github_url(url: str) -> tuple[bool, str]:
             "Expected: https://github.com/username/repository"
         )
 
-    # TODO (Week 2 — Maria + Maidah): add a live reachability check here.
-    # Use requests.head(url) and reject if status != 200.
-    # This prevents 404 repos from reaching the analysis engine.
+    # Week 2 (Maidah): live reachability check. A HEAD request is enough to
+    # confirm the repo exists and is public — no need to download anything
+    # here, Maria's github_fetcher.py does the real fetching later.
+    # We deliberately fail *closed*: any network error, timeout, or non-200
+    # response is treated as "not usable" rather than silently passing the
+    # URL through to the fetcher.
+    try:
+        resp = requests.head(
+            url, timeout=GITHUB_TIMEOUT_SECONDS, allow_redirects=True
+        )
+        if resp.status_code != 200:
+            return False, "GitHub repository is not reachable or is private."
+    except requests.RequestException:
+        return False, "Could not connect to GitHub. Check the URL and try again."
 
     return True, ""
