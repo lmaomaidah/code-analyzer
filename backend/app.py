@@ -7,6 +7,7 @@ from analyzers.pylint_scanner import run_pylint
 from analyzers.radon_scanner import run_radon
 from analyzers.bandit_scanner import run_bandit
 from utils.validator import validate_input
+from utils.github_fetcher import fetch_github_code
 
 app = Flask(__name__)
 CORS(app)
@@ -47,7 +48,16 @@ def analyze():
     if not is_valid:
         return jsonify({"error": error_msg}), 422
 
-    code = data.get("code", "")
+  # Handle both input modes — pasted code OR GitHub URL
+    
+        # Handle both input modes — pasted code OR GitHub URL
+    if "github_url" in data:
+        try:
+            code = fetch_github_code(data["github_url"])
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 422
+    else:
+        code = data.get("code", "")
 
     # --- Run scanners (Week 3: replace stubs with real calls) ---
     pylint_result = run_pylint(code)   # Maria — Week 3
