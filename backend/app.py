@@ -81,11 +81,45 @@ def analyze():
 def compute_score(pylint_result, radon_result, bandit_result):
     """
     Combines scanner results into a single quality score (0-100).
-
-    TODO (Week 4): implement real weighted formula.
-    Formula will be documented in API.md once finalised.
+    Formula: Pylint 40% + Radon 30% + Bandit 30%
     """
-    return 75  # placeholder
+
+    # ── Pylint Score (0-100) ──────────────────────────
+    # Pylint gives score out of 10 — convert to 100
+    pylint_raw = pylint_result.get("score", 0.0)
+    pylint_score = min(max(pylint_raw * 10, 0), 100)
+
+    # ── Radon Score (0-100) ───────────────────────────
+    # Maintainability index is already 0-100
+    # Complexity: lower is better — penalize high complexity
+    mi = radon_result.get("maintainability_index", 0.0)
+    avg_complexity = radon_result.get("average_complexity", 0.0)
+
+    # Complexity penalty: ideal is 1-5, penalize above 10
+    if avg_complexity <= 5:
+        complexity_score = 100
+    elif avg_complexity <= 10:
+        complexity_score = 100 - ((avg_complexity - 5) * 8)
+    else:
+        complexity_score = max(0, 100 - ((avg_complexity - 5) * 10))
+
+    radon_score = (mi * 0.6) + (complexity_score * 0.4)
+    radon_score = min(max(radon_score, 0), 100)
+
+    # ── Bandit Score (0-100) ──────────────────────────
+    # Penalize based on severity of security issues
+    high   = bandit_result.get("high_count",   0)
+    medium = bandit_result.get("medium_count", 0)
+    low    = bandit_result.get("low_count",    0)
+
+    penalty = (high * 20) + (medium * 10) + (low * 5)
+    bandit_score = max(0, 100 - penalty)
+
+    # ── Weighted Final Score ──────────────────────────
+    final = (pylint_score * 0.4) + (radon_score * 0.3) + (bandit_score * 0.3)
+    final = round(min(max(final, 0), 100), 1)
+
+    return final
 
 
 if __name__ == "__main__":
