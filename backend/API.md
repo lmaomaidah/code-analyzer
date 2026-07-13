@@ -105,3 +105,21 @@ The `score` field is calculated as a weighted combination:
 | Bandit severity count  | 30%    | HIGH issues penalised heavily |
 
 > Formula is a placeholder until Week 4. Weights may be adjusted after testing.
+
+## Scoring Formula
+
+The quality score is calculated using a weighted formula:
+
+| Component | Weight | How It's Calculated |
+|-----------|--------|---------------------|
+| Pylint    | 40%    | Pylint score (0-10) converted to 0-100 |
+| Radon     | 30%    | Maintainability index (60%) + Complexity score (40%) |
+| Bandit    | 30%    | 100 minus penalties: High=-20, Medium=-10, Low=-5 |
+
+**Final Score = (Pylint × 0.4) + (Radon × 0.3) + (Bandit × 0.3)**
+
+Score ranges:
+- 80-100: Excellent quality
+- 60-79:  Good quality
+- 40-59:  Needs improvement
+- 0-39:   Poor quality
