@@ -8,6 +8,7 @@ import json
 import tempfile
 import os
 
+
 def run_pylint(code: str) -> dict:
     """
     Runs Pylint on the submitted code.
@@ -25,36 +26,39 @@ def run_pylint(code: str) -> dict:
             tmp.write(code)
             tmp_path = tmp.name
 
-        # Step 2: Run Pylint on the temp file
-        result = subprocess.run(
-            ["pylint", tmp_path, "--output-format=json", "--score=yes"],
+        # Step 2: Run Pylint for JSON issues
+        json_result = subprocess.run(
+            ["pylint", tmp_path, "--output-format=json"],
             capture_output=True,
             text=True
         )
 
-        # Step 3: Parse the JSON output
-        raw = result.stdout.strip()
-        if not raw:
-            return {
-                "score": 10.0,
-                "issues": [],
-                "issue_count": 0,
-                "error": None
-            }
+        # Step 3: Run Pylint separately for score
+        score_result = subprocess.run(
+            ["pylint", tmp_path, "--output-format=text", "--score=yes"],
+            capture_output=True,
+            text=True
+        )
 
+        # Step 4: Parse JSON issues
+        raw = json_result.stdout.strip()
         try:
-            messages = json.loads(raw)
+            messages = json.loads(raw) if raw else []
         except json.JSONDecodeError:
             messages = []
 
         parsed = _parse_pylint_output(messages)
 
-        # Step 4: Extract score from stderr
+        # Step 5: Extract score from text output
         score = 0.0
-        for line in result.stderr.splitlines() + result.stdout.splitlines():
+        all_text = score_result.stdout + score_result.stderr
+        for line in all_text.splitlines():
             if "Your code has been rated at" in line:
                 try:
-                    score = float(line.split("at")[1].split("/")[0].strip())
+                    rated_part = line.split("rated at")[1].strip()
+                    score_str = rated_part.split("/")[0].strip()
+                    score = float(score_str)
+                    break
                 except (ValueError, IndexError):
                     score = 0.0
 
@@ -70,7 +74,6 @@ def run_pylint(code: str) -> dict:
         }
 
     finally:
-        # Step 5: Always delete temp file
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
