@@ -1,38 +1,48 @@
 import React from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+function SeverityChart({ data }) {
+  const total = data.reduce((acc, curr) => acc + curr.count, 0) || 1;
 
-export default function SeverityChart({ summary }) {
-  const pylint = summary?.pylint || { high: 0, medium: 0, low: 0 };
-  const bandit = summary?.bandit || { high: 0, medium: 0, low: 0 };
-
-  const data = {
-    labels: ['Pylint', 'Bandit'],
-    datasets: [
-      { label: 'High', data: [pylint.high || 0, bandit.high || 0], backgroundColor: '#E05C7A' },
-      { label: 'Medium', data: [pylint.medium || 0, bandit.medium || 0], backgroundColor: '#E8A230' },
-      { label: 'Low', data: [pylint.low || 0, bandit.low || 0], backgroundColor: '#4D9EE8' },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { position: 'top', labels: { color: '#D8E8F0' } },
-      title: { display: true, text: 'Issues by Severity', color: '#fff', font: { size: 16 } },
-    },
-    scales: {
-      x: { grid: { color: '#1E3A54' }, ticks: { color: '#6A8FA8' } },
-      y: { grid: { color: '#1E3A54' }, ticks: { color: '#6A8FA8', stepSize: 1 } },
-    },
+  const colors = {
+    High: '#ef4444',
+    Medium: '#f59e0b',
+    Low: '#3b82f6'
   };
 
   return (
-    <div style={{ background: '#112338', border: '1px solid #1E3A54', borderRadius: '12px', padding: '20px', height: '300px', marginTop: '20px' }}>
-      <Bar data={data} options={options} />
+    <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: '#94a3b8' }}>
+        <span>Issue Severity Breakdown</span>
+        <span>Total Issues: {total}</span>
+      </div>
+
+      <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#334155', gap: '2px' }}>
+        {data.map((item, index) => {
+          const percentage = (item.count / total) * 100;
+          return (
+            <div 
+              key={index}
+              style={{ 
+                width: `${percentage}%`, 
+                backgroundColor: colors[item.name] || '#38bdf8',
+                transition: 'width 0.3s ease'
+              }}
+              title={`${item.name}: ${item.count}`}
+            />
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: '15px', marginTop: '10px', fontSize: '12px', color: '#cbd5e1' }}>
+        {data.map((item, index) => (
+          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: colors[item.name] || '#38bdf8' }}></span>
+            <span>{item.name}: {item.count}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
+
+export default SeverityChart;
