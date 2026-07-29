@@ -1,116 +1,133 @@
-/**
- * InputPage.jsx
- * Owner: Hira (Frontend Lead)
- * Week:  Week 1 — functional skeleton (no styling yet)
- *
- * What this page does:
- *   - Lets the user paste Python code OR enter a GitHub URL
- *   - Sends it to the Flask /analyze endpoint
- *   - Shows the raw JSON response (placeholder until Dashboard is built in Week 5)
- *
- * TODO Week 2: add tab switching between "Paste Code" and "GitHub URL" modes
- * TODO Week 5: replace <pre> JSON dump with the real Dashboard component
- */
-
-import { useState } from 'react'
-import axios from 'axios'
-
-const API_BASE = '/api'   // proxied to http://localhost:5000 via vite.config.js
+import React, { useState } from 'react';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function InputPage() {
-  const [code,      setCode]      = useState('')
-  const [githubUrl, setGithubUrl] = useState('')
-  const [result,    setResult]    = useState(null)
-  const [error,     setError]     = useState(null)
-  const [loading,   setLoading]   = useState(false)
+  const [activeTab, setActiveTab] = useState('code'); // 'code' ya 'github'
+  const [codeContent, setCodeContent] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  // Which input mode the user has selected
-  const [mode, setMode] = useState('code')   // 'code' | 'github'
+  const MAX_CHARS = 5000;
 
-  const handleSubmit = async () => {
-    setError(null)
-    setResult(null)
-    setLoading(true)
+  // Validation aur Submit handler
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
 
-    const body = mode === 'code'
-      ? { code }
-      : { github_url: githubUrl }
-
-    try {
-      const res = await axios.post(`${API_BASE}/analyze`, body)
-      setResult(res.data)
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Something went wrong. Is the backend running?'
-      setError(msg)
-    } finally {
-      setLoading(false)
+    if (activeTab === 'code') {
+      if (!codeContent.trim()) {
+        setError('Please enter some Python code to analyze.');
+        return;
+      }
+      if (codeContent.length > MAX_CHARS) {
+        setError(`Code exceeds the maximum limit of ${MAX_CHARS} characters.`);
+        return;
+      }
+    } else {
+      if (!githubUrl.trim()) {
+        setError('Please enter a GitHub repository URL.');
+        return;
+      }
+      if (!githubUrl.includes('github.com')) {
+        setError('Please enter a valid GitHub URL.');
+        return;
+      }
     }
-  }
+
+    setLoading(true);
+    // Yahan analysis request ya API call aayegi
+    setTimeout(() => {
+      setLoading(false);
+      alert('Analysis completed successfully!');
+    }, 2000);
+  };
 
   return (
-    <div style={{ maxWidth: 800, margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '800px', margin: '40px auto', padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+      <h2>Python Code Quality Analyzer</h2>
+      <p>Select input method to run static analysis (Pylint, Radon, Bandit).</p>
 
-      <h1>Code Quality Analyzer</h1>
-      <p style={{ color: '#666' }}>Paste Python code or provide a GitHub repo URL to analyse.</p>
-
-      {/* Mode toggle */}
-      <div style={{ marginBottom: 16 }}>
-        <button onClick={() => setMode('code')}   disabled={mode === 'code'}  style={{ marginRight: 8 }}>Paste Code</button>
-        <button onClick={() => setMode('github')} disabled={mode === 'github'}>GitHub URL</button>
+      {/* Tabs Switcher */}
+      <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #ccc' }}>
+        <button
+          onClick={() => { setActiveTab('code'); setError(''); }}
+          style={{
+            padding: '10px 20px',
+            background: activeTab === 'code' ? '#14C9A8' : 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            color: activeTab === 'code' ? '#fff' : '#333'
+          }}
+        >
+          Paste Code
+        </button>
+        <button
+          onClick={() => { setActiveTab('github'); setError(''); }}
+          style={{
+            padding: '10px 20px',
+            background: activeTab === 'github' ? '#14C9A8' : 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            color: activeTab === 'github' ? '#fff' : '#333'
+          }}
+        >
+          GitHub Repository
+        </button>
       </div>
 
-      {/* Code paste input */}
-      {mode === 'code' && (
-        <textarea
-          rows={16}
-          style={{ width: '100%', fontFamily: 'monospace', fontSize: 13, padding: 12, boxSizing: 'border-box' }}
-          placeholder="# Paste your Python code here..."
-          value={code}
-          onChange={e => setCode(e.target.value)}
-        />
-      )}
+      {/* Error Message */}
+      {error && <div style={{ color: 'red', marginBottom: '15px' }}>{error}</div>}
 
-      {/* GitHub URL input */}
-      {mode === 'github' && (
-        <input
-          type="url"
-          style={{ width: '100%', padding: 12, fontSize: 14, boxSizing: 'border-box' }}
-          placeholder="https://github.com/username/repository"
-          value={githubUrl}
-          onChange={e => setGithubUrl(e.target.value)}
-        />
-      )}
+      <form onSubmit={handleSubmit}>
+        {activeTab === 'code' ? (
+          <div>
+            <textarea
+              rows="12"
+              value={codeContent}
+              onChange={(e) => setCodeContent(e.target.value)}
+              placeholder="Paste your Python code here..."
+              style={{ width: '100%', padding: '10px', fontFamily: 'monospace', fontSize: '14px' }}
+            />
+            <div style={{ textAlign: 'right', fontSize: '12px', color: codeContent.length > MAX_CHARS ? 'red' : '#666' }}>
+              {codeContent.length} / {MAX_CHARS} characters
+            </div>
+          </div>
+        ) : (
+          <div>
+            <input
+              type="text"
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              placeholder="https://github.com/username/repository"
+              style={{ width: '100%', padding: '10px', fontSize: '14px' }}
+            />
+          </div>
+        )}
 
-      {/* Submit */}
-      <button
-        onClick={handleSubmit}
-        disabled={loading}
-        style={{ marginTop: 12, padding: '10px 24px', fontSize: 15, cursor: loading ? 'wait' : 'pointer' }}
-      >
-        {loading ? 'Analysing…' : 'Analyse'}
-      </button>
-
-      {/* Error display */}
-      {error && (
-        <div style={{ marginTop: 20, padding: 16, background: '#fff0f0', border: '1px solid #f5c6cb', borderRadius: 6, color: '#721c24' }}>
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
-      {/* Result display — raw JSON for now, Dashboard in Week 5 */}
-      {result && (
-        <div style={{ marginTop: 20 }}>
-          <h2>Result (raw — Dashboard coming Week 5)</h2>
-          <p>Quality Score: <strong>{result.score}</strong> / 100</p>
-          <pre style={{
-            background: '#1a1a2e', color: '#c9e0f0', padding: 16,
-            borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.6
-          }}>
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        </div>
-      )}
-
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            marginTop: '20px',
+            padding: '10px 20px',
+            backgroundColor: '#1E3A54',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '16px'
+          }}
+        >
+          {loading && <LoadingSpinner />}
+          {loading ? 'Analyzing...' : 'Analyze Code'}
+        </button>
+      </form>
     </div>
-  )
+  );
 }
