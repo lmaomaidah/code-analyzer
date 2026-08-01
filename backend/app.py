@@ -77,56 +77,31 @@ def analyze():
         }
     })
 
-
 def compute_score(pylint_result, radon_result, bandit_result):
-    """
-    Combines scanner results into a single quality score (0-100).
-    Formula: Pylint 40% + Radon 30% + Bandit 30%
-    """
+    """Weighted formula: Pylint 40% + Radon 30% + Bandit 30%"""
 
-    # ── Pylint Score (0-100) ──────────────────────────
-    # Pylint gives score out of 10 — convert to 100
+    # Pylint: score 0-10 → convert to 0-40
     pylint_raw = pylint_result.get("score", 0.0)
-    pylint_score = min(max(pylint_raw * 10, 0), 100)
+    pylint_score = (pylint_raw / 10.0) * 40
 
-    # ── Radon Score (0-100) ───────────────────────────
-    # Maintainability index is already 0-100
-    # Complexity: lower is better — penalize high complexity
+    # Radon: maintainability index 0-100 → convert to 0-30
     mi = radon_result.get("maintainability_index", 0.0)
-    avg_complexity = radon_result.get("average_complexity", 0.0)
+    radon_score = (mi / 100.0) * 30
 
-    # Complexity penalty: ideal is 1-5, penalize above 10
-    if avg_complexity <= 5:
-        complexity_score = 100
-    elif avg_complexity <= 10:
-        complexity_score = 100 - ((avg_complexity - 5) * 8)
-    else:
-        complexity_score = max(0, 100 - ((avg_complexity - 5) * 10))
-
-    radon_score = (mi * 0.6) + (complexity_score * 0.4)
-    radon_score = min(max(radon_score, 0), 100)
-
-    # ── Bandit Score (0-100) ──────────────────────────
-    # Penalize based on severity of security issues
+    # Bandit: start at 30, penalize for findings
     high   = bandit_result.get("high_count",   0)
     medium = bandit_result.get("medium_count", 0)
-    low    = bandit_result.get("low_count",    0)
+    bandit_score = max(0, 30 - (high * 10) - (medium * 5))
 
-    penalty = (high * 20) + (medium * 10) + (low * 5)
-    bandit_score = max(0, 100 - penalty)
-
-    # ── Weighted Final Score ──────────────────────────
-    final = (pylint_score * 0.4) + (radon_score * 0.3) + (bandit_score * 0.3)
+    # Final weighted score
+    final = pylint_score + radon_score + bandit_score
     final = round(min(max(final, 0), 100), 1)
 
     return final
 
 
+import os
+
 if __name__ == "__main__":
-    # Security fix (Maidah, Week 2 audit — Bandit B201 flask_debug_true):
-    # hardcoded debug=True exposes the Werkzeug interactive debugger, which
-    # allows arbitrary code execution if the /analyze endpoint (or anything
-    # else) ever throws an unhandled exception in production. Debug mode is
-    # now opt-in via FLASK_DEBUG (see .env.example) and defaults to off.
-    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(debug=debug_mode)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

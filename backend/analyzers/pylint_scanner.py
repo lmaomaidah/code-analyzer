@@ -11,7 +11,7 @@ space between "rated" and "at" (observed output: "...has been ratedat
 10.00/10..."), likely a terminal-width detection quirk when Pylint is
 run as a subprocess with no real TTY attached. The exact-substring
 match silently never fired in that case, so `score` stayed at its 0.0
-default on every single request — not a crash, just silently wrong
+default on every single request -- not a crash, just silently wrong
 data feeding directly into compute_score(). Replaced with a regex that
 tolerates zero-or-more whitespace around "at" (and negative scores,
 which Pylint can produce for very bad code).
