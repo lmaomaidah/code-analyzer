@@ -2,11 +2,30 @@
 pylint_scanner.py
 Owner: Maria (Backend Lead)
 Runs Pylint on submitted Python code and returns structured findings.
+
+Week 5 fix (flagged by Maidah, root-caused via test_integration.py):
+Score extraction previously did an exact substring match on
+"Your code has been rated at". On at least one Windows/Python 3.13
+environment, Pylint 3.2.5's text reporter wraps that line WITHOUT a
+space between "rated" and "at" (observed output: "...has been ratedat
+10.00/10..."), likely a terminal-width detection quirk when Pylint is
+run as a subprocess with no real TTY attached. The exact-substring
+match silently never fired in that case, so `score` stayed at its 0.0
+default on every single request — not a crash, just silently wrong
+data feeding directly into compute_score(). Replaced with a regex that
+tolerates zero-or-more whitespace around "at" (and negative scores,
+which Pylint can produce for very bad code).
 """
 import subprocess
 import json
+import re
 import tempfile
 import os
+
+# Matches "rated at X.XX/10", "ratedat X.XX/10", "rated  at  X.XX / 10",
+# case-insensitively, and captures the (possibly negative) score.
+SCORE_PATTERN = re.compile(r"rated\s*at\s*(-?\d+\.?\d*)\s*/\s*10", re.IGNORECASE)
+
 
 def run_pylint(code: str) -> dict:
     """
@@ -25,38 +44,41 @@ def run_pylint(code: str) -> dict:
             tmp.write(code)
             tmp_path = tmp.name
 
-        # Step 2: Run Pylint on the temp file
-        result = subprocess.run(
-            ["pylint", tmp_path, "--output-format=json", "--score=yes"],
+        # Step 2: Run Pylint for JSON issues
+        json_result = subprocess.run(
+            ["pylint", tmp_path, "--output-format=json"],
             capture_output=True,
             text=True
         )
 
-        # Step 3: Parse the JSON output
-        raw = result.stdout.strip()
-        if not raw:
-            return {
-                "score": 10.0,
-                "issues": [],
-                "issue_count": 0,
-                "error": None
-            }
+        # Step 3: Run Pylint separately for score
+        score_result = subprocess.run(
+            ["pylint", tmp_path, "--output-format=text", "--score=yes"],
+            capture_output=True,
+            text=True
+        )
 
+        # Step 4: Parse JSON issues
+        raw = json_result.stdout.strip()
         try:
-            messages = json.loads(raw)
+            messages = json.loads(raw) if raw else []
         except json.JSONDecodeError:
             messages = []
 
         parsed = _parse_pylint_output(messages)
 
-        # Step 4: Extract score from stderr
+        # Step 5: Extract score from text output.
+        # Regex-based (see module docstring) instead of an exact
+        # substring match, specifically to survive the missing-space
+        # line-wrap quirk seen on some Windows/Python 3.13 setups.
         score = 0.0
-        for line in result.stderr.splitlines() + result.stdout.splitlines():
-            if "Your code has been rated at" in line:
-                try:
-                    score = float(line.split("at")[1].split("/")[0].strip())
-                except (ValueError, IndexError):
-                    score = 0.0
+        all_text = score_result.stdout + score_result.stderr
+        match = SCORE_PATTERN.search(all_text)
+        if match:
+            try:
+                score = float(match.group(1))
+            except ValueError:
+                score = 0.0
 
         parsed["score"] = max(score, 0.0)
         return parsed
@@ -70,7 +92,6 @@ def run_pylint(code: str) -> dict:
         }
 
     finally:
-        # Step 5: Always delete temp file
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
