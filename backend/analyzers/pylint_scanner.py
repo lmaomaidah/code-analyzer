@@ -2,11 +2,29 @@
 pylint_scanner.py
 Owner: Maria (Backend Lead)
 Runs Pylint on submitted Python code and returns structured findings.
+
+Week 5 fix (flagged by Maidah, root-caused via test_integration.py):
+Score extraction previously did an exact substring match on
+"Your code has been rated at". On at least one Windows/Python 3.13
+environment, Pylint 3.2.5's text reporter wraps that line WITHOUT a
+space between "rated" and "at" (observed output: "...has been ratedat
+10.00/10..."), likely a terminal-width detection quirk when Pylint is
+run as a subprocess with no real TTY attached. The exact-substring
+match silently never fired in that case, so `score` stayed at its 0.0
+default on every single request -- not a crash, just silently wrong
+data feeding directly into compute_score(). Replaced with a regex that
+tolerates zero-or-more whitespace around "at" (and negative scores,
+which Pylint can produce for very bad code).
 """
 import subprocess
 import json
+import re
 import tempfile
 import os
+
+# Matches "rated at X.XX/10", "ratedat X.XX/10", "rated  at  X.XX / 10",
+# case-insensitively, and captures the (possibly negative) score.
+SCORE_PATTERN = re.compile(r"rated\s*at\s*(-?\d+\.?\d*)\s*/\s*10", re.IGNORECASE)
 
 
 def run_pylint(code: str) -> dict:
@@ -49,18 +67,18 @@ def run_pylint(code: str) -> dict:
 
         parsed = _parse_pylint_output(messages)
 
-        # Step 5: Extract score from text output
+        # Step 5: Extract score from text output.
+        # Regex-based (see module docstring) instead of an exact
+        # substring match, specifically to survive the missing-space
+        # line-wrap quirk seen on some Windows/Python 3.13 setups.
         score = 0.0
         all_text = score_result.stdout + score_result.stderr
-        for line in all_text.splitlines():
-            if "Your code has been rated at" in line:
-                try:
-                    rated_part = line.split("rated at")[1].strip()
-                    score_str = rated_part.split("/")[0].strip()
-                    score = float(score_str)
-                    break
-                except (ValueError, IndexError):
-                    score = 0.0
+        match = SCORE_PATTERN.search(all_text)
+        if match:
+            try:
+                score = float(match.group(1))
+            except ValueError:
+                score = 0.0
 
         parsed["score"] = max(score, 0.0)
         return parsed

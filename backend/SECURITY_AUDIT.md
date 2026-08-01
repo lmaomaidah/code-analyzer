@@ -175,3 +175,111 @@ path behaves correctly:
 Research-only notes for the deferred SQL injection detection module are in
 `analyzers/SQL_INJECTION_RESEARCH.md`. Not implemented — intentionally
 deferred until after the MVP is stable, per the locked sprint scope.
+
+## Week 5 update — integration testing, crash resilience, SQLi research
+
+### Full-pipeline integration tests (`tests/test_integration.py`)
+
+With Maria's `compute_score()` now the real weighted formula (not the
+Week 4 placeholder), added tests that assert on the *score itself* end
+to end:
+
+- Clean, documented, zero-Bandit-finding code scores comfortably above
+  60.
+- Deliberately messy code (deep nesting, no docstrings, three
+  non-blocked Bandit findings — MD5 hashing, `random` used for a token,
+  and unpickling arbitrary bytes) scores below 50.
+- Full response shape checked against `API.md`'s documented contract, so
+  a backend field rename can't silently break Hira's dashboard.
+- Temp-file persistence re-checked specifically against the messier
+  sample, on top of the Week 4 check against the simpler one.
+
+### Crash resilience / boundary testing (`tests/test_edge_cases.py`)
+
+| Input                                                  | Expected behaviour                     | Actual behaviour | Pass/Fail |
+|---------------------------------------------------------|-----------------------------------------|-------------------|-----------|
+| Empty string (`{"code": ""}`)                            | Clean 4xx, never 500                   | 422 — see quirk note below | ✅ Pass |
+| Random non-Python garbage (meets min length)             | 200, tool-level errors handled gracefully, never 500 | 200/422, never 500 | ✅ Pass |
+| Code at exactly 50,000 characters                       | 200 (accepted)                          | 200               | ✅ Pass |
+| Code at 50,001 characters                                | 422 with a clear "maximum length" message | 422             | ✅ Pass |
+| GitHub URL for a deleted/nonexistent repo                | 422, never 500                          | 422               | ✅ Pass |
+| GitHub URL for a repo with zero `.py` files               | 422 with a clear "no .py files" message  | 422               | ✅ Pass |
+
+**Known quirk (documented, not a bug fix in scope):** submitting
+`{"code": ""}` is treated the same as submitting neither `code` nor
+`github_url` at all, because an empty string is falsy in Python and the
+"was anything provided" check runs before the "is it long enough" check.
+The user still gets a safe 422, but the message says "provide either
+code or github_url" instead of "code is too short." Cosmetic, not a
+security issue — flagged here so a future change doesn't accidentally
+"fix" the message without also updating
+`test_edge_cases.py::test_empty_string_code_never_500`.
+
+A parametrised sweep test (`test_hostile_or_malformed_inputs_never_crash_server`)
+also runs all of the above (plus a non-GitHub URL and a fully empty
+body) through the same assertion: **status code is never 500.** This is
+the single invariant that matters most for the free-tier Render dyno —
+a 500 potentially means an unhandled exception took the whole process
+down, not just the one request.
+
+### SQL injection stretch goal — research finalised
+
+Full writeup: `backend/docs/SQL_INJECTION_RESEARCH.md`. Summary: Bandit's
+B608 already provides reasonable baseline coverage for direct
+concatenation and f-string patterns; the real gap is ORM-specific raw-SQL
+methods (Django `.raw()`/`.extra()`, SQLAlchemy `text()`). Recommendation
+is to treat this as a genuine but low-priority Week 7 stretch goal, and
+to skip it entirely rather than ship a rushed regex-only version that
+produces excessive false positives.
+
+---
+
+## Week 6 update — deployment-phase security verification
+
+### Final Bandit self-scan against the deployed backend
+
+Run this again once Maria's Week 6 Render deployment is live — the
+command is identical to the Week 2/3 self-scan, just re-run against
+whatever commit is actually deployed (not just what's on a local
+branch):
+
+```bash
+cd backend
+bandit -r . -x ./tests -f json -o bandit_self_report_deployed.json
+bandit -r . -x ./tests   # human-readable
+```
+
+**Action for whoever deploys:** paste the resulting HIGH/MEDIUM/LOW
+counts and any new findings into this section before the final report is
+written. If nothing changed since the Week 3 self-scan (B603/B607, both
+assessed as safe — see above), say so explicitly rather than leaving
+this section blank.
+
+### Persistence guarantee on the deployed (Render) instance
+
+**Important limitation, stated plainly:** `test_no_temp_files_left_*`
+tests work by inspecting the *local test runner's* `/tmp` directory
+directly. There is no equivalent remote check possible against a Render
+dyno from outside it — Render's free tier gives no shell/filesystem
+access, so we cannot literally `glob()` the deployed server's `/tmp` from
+a client script.
+
+What we *can* verify remotely: a smoke-test script
+(`backend/scripts/deployed_smoke_test.py`, see below) that POSTs known
+inputs to the live URL and confirms the response looks correct — proving
+the deployed code *behaves* the same as the tested code, not proving disk
+state directly.
+
+The actual persistence guarantee for the deployed instance rests on:
+1. The `finally`-block cleanup in `bandit_scanner.py` and
+   `pylint_scanner.py` is unconditional code, not environment-specific —
+   it runs identically wherever the process executes.
+2. Render's free-tier containers are ephemeral and rebuilt from the
+   deployed image on every restart, so even a hypothetical leaked temp
+   file would not persist across dyno restarts.
+3. The local test suite proves this code path with a real filesystem
+   check; deployment doesn't change the code, only where it runs.
+
+This is a reasonable and honest audit position — but it should be stated
+as "verified locally, deployment-environment-independent by code
+construction," not overstated as "verified in production."
