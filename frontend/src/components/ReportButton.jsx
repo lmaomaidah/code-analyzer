@@ -45,7 +45,6 @@ export default function ReportButton() {
         fontSize: '12px',
         fontWeight: '600',
         cursor: 'pointer',
-        marginTop: '20px',
       }}
     >
       {loading ? 'Generating PDF...' : 'Download PDF Report'}
