@@ -17,6 +17,7 @@ tolerates zero-or-more whitespace around "at" (and negative scores,
 which Pylint can produce for very bad code).
 """
 import subprocess
+import sys
 import json
 import re
 import tempfile
@@ -46,14 +47,14 @@ def run_pylint(code: str) -> dict:
 
         # Step 2: Run Pylint for JSON issues
         json_result = subprocess.run(
-            ["pylint", tmp_path, "--output-format=json"],
+            [sys.executable, "-m", "pylint", tmp_path, "--output-format=json"],
             capture_output=True,
             text=True
         )
 
         # Step 3: Run Pylint separately for score
         score_result = subprocess.run(
-            ["pylint", tmp_path, "--output-format=text", "--score=yes"],
+            [sys.executable, "-m", "pylint", tmp_path, "--output-format=text", "--score=yes"],
             capture_output=True,
             text=True
         )

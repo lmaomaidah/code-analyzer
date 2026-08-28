@@ -7,6 +7,7 @@ Runs Bandit on submitted Python code and returns structured security findings.
 """
 
 import subprocess
+import sys
 import json
 import tempfile
 import os
@@ -70,7 +71,7 @@ def run_bandit(code: str) -> dict:
         # -f json  → machine-readable output
         # -q       → quiet (suppress Bandit's own banner/progress noise)
         result = subprocess.run(
-            ["bandit", "-f", "json", "-q", tmp_path],
+            [sys.executable, "-m", "bandit", "-f", "json", "-q", tmp_path],
             capture_output=True,
             text=True,
             timeout=BANDIT_TIMEOUT_SECONDS,
