@@ -31,3 +31,5 @@ frontend/dist/
 # Temp files from Bandit scanner
 /backend/tmp/
 *.tmp
+
+.claude/
